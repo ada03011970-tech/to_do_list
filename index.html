@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Планировщик дел</title>
+<style>
+  :root {
+    --bg: #f4f2ee; --card: #ffffff; --text: #1d1d1f; --muted: #7a7670; --line: #e6e2db;
+    --urgent: #e5484d; --normal: #f5a524; --later: #3b82f6; --ok: #30a46c; --track: #ece8e1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141413; --card: #1f1e1c; --text: #f2f0ec; --muted: #9a958d; --line: #2f2d2a; --track: #2c2a27;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0; }
+  .day-nav { display: flex; align-items: center; gap: 6px; }
+  .day-nav button, .ghost {
+    background: var(--card); border: 1px solid var(--line); color: var(--text);
+    border-radius: 10px; padding: 6px 10px; cursor: pointer; font: inherit;
+  }
+  .day-nav button:hover, .ghost:hover { border-color: var(--muted); }
+  .date-label { min-width: 150px; text-align: center; font-weight: 600; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 20px; margin-bottom: 16px; }
+
+  /* Кольца */
+  .rings-card { display: grid; grid-template-columns: 200px 1fr; gap: 20px; align-items: center; }
+  .rings { position: relative; width: 200px; height: 200px; }
+  .rings svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .rings circle { fill: none; stroke-linecap: round; transition: stroke-dashoffset .6s ease; }
+  .rings .center { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+  .rings .pct { font-size: 32px; font-weight: 700; }
+  .rings .sub { font-size: 13px; color: var(--muted); }
+  .legend { display: grid; gap: 10px; }
+  .legend-row { display: flex; align-items: center; gap: 10px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+  .legend-row .name { flex: 1; }
+  .legend-row .val { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .stats { display: flex; gap: 16px; margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .stat b { display: block; font-size: 20px; }
+  .stat span { font-size: 13px; color: var(--muted); }
+
+  /* Неделя */
+  .week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .wd { display: grid; justify-items: center; gap: 4px; cursor: pointer; padding: 6px 0; border-radius: 12px; border: 1px solid transparent; background: none; color: inherit; font: inherit; }
+  .wd:hover { background: var(--bg); }
+  .wd.active { border-color: var(--line); background: var(--bg); }
+  .wd svg { width: 38px; height: 38px; transform: rotate(-90deg); }
+  .wd circle { fill: none; stroke-width: 5; stroke-linecap: round; }
+  .wd small { font-size: 12px; color: var(--muted); }
+  .wd .num { font-size: 13px; font-weight: 600; }
+  .section-title { font-size: 14px; color: var(--muted); margin: 0 0 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+
+  /* Форма */
+  form { display: flex; flex-wrap: wrap; gap: 8px; }
+  input[type=text] {
+    flex: 1 1 260px; min-width: 0; padding: 12px 14px; border-radius: 12px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit;
+  }
+  input[type=text]:focus { outline: 2px solid var(--later); outline-offset: -1px; }
+  .prio { display: flex; gap: 6px; }
+  .prio label { cursor: pointer; }
+  .prio input { position: absolute; opacity: 0; pointer-events: none; }
+  .prio span {
+    display: inline-block; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line);
+    font-size: 14px; white-space: nowrap;
+  }
+  .prio input:checked + span { color: #fff; border-color: transparent; background: var(--c); }
+  .prio input:focus-visible + span { outline: 2px solid var(--c); outline-offset: 2px; }
+  .add { padding: 10px 18px; border: 0; border-radius: 12px; background: var(--text); color: var(--bg); font: inherit; font-weight: 600; cursor: pointer; }
+
+  /* Список */
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { display: flex; align-items: center; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--line); }
+  li:last-child { border-bottom: 0; }
+  .check {
+    width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--c); flex: none;
+    background: transparent; cursor: pointer; display: grid; place-items: center; padding: 0;
+  }
+  .check svg { width: 14px; height: 14px; opacity: 0; }
+  li.done .check { background: var(--c); }
+  li.done .check svg { opacity: 1; }
+  .title { flex: 1; word-break: break-word; }
+  li.done .title { text-decoration: line-through; color: var(--muted); }
+  .tag { font-size: 12px; padding: 2px 8px; border-radius: 999px; color: var(--c); border: 1px solid var(--c); white-space: nowrap; }
+  .del { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 20px; line-height: 1; padding: 4px 6px; border-radius: 8px; }
+  .del:hover { color: var(--urgent); background: var(--bg); }
+  .empty { color: var(--muted); text-align: center; padding: 24px 0; }
+  .row-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+
+  @media (max-width: 560px) {
+    .rings-card { grid-template-columns: 1fr; justify-items: center; }
+    .legend { width: 100%; }
+    header { flex-direction: column; align-items: stretch; }
+    .day-nav { justify-content: space-between; }
+    .prio { flex: 1 1 100%; }
+    .prio label { flex: 1; } .prio span { width: 100%; text-align: center; }
+    .add { flex: 1 1 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Планировщик дел</h1>
+    <div class="day-nav">
+      <button id="prev" aria-label="Предыдущий день">←</button>
+      <div class="date-label" id="dateLabel"></div>
+      <button id="next" aria-label="Следующий день">→</button>
+      <button id="today">Сегодня</button>
+    </div>
+  </header>
+
+  <section class="card rings-card">
+    <div class="rings">
+      <svg viewBox="0 0 200 200" id="ringsSvg"></svg>
+      <div class="center"><div class="pct" id="pct">0%</div><div class="sub" id="sub">нет задач</div></div>
+    </div>
+    <div class="legend">
+      <div id="legend"></div>
+      <div class="stats">
+        <div class="stat"><b id="streak">0</b><span>дней подряд на 100%</span></div>
+        <div class="stat"><b id="weekPct">0%</b><span>выполнено за 7 дней</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <p class="section-title">Неделя</p>
+    <div class="week" id="week"></div>
+  </section>
+
+  <section class="card">
+    <form id="form" autocomplete="off">
+      <input type="text" id="taskInput" placeholder="Новая задача…" maxlength="200" required>
+      <div class="prio" role="radiogroup" aria-label="Приоритет">
+        <label><input type="radio" name="prio" value="urgent" checked><span style="--c:var(--urgent)">Срочно</span></label>
+        <label><input type="radio" name="prio" value="normal"><span style="--c:var(--normal)">Второстепенно</span></label>
+        <label><input type="radio" name="prio" value="later"><span style="--c:var(--later)">Потом</span></label>
+      </div>
+      <button class="add" type="submit">Добавить</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <p class="section-title" id="listTitle">Задачи</p>
+    <ul id="list"></ul>
+    <div class="row-actions"><button class="ghost" id="carry" hidden>Перенести невыполненные со вчера</button></div>
+  </section>
+</div>
+
+<script>
+const PRIO = {
+  urgent: { name: 'Срочно',        color: 'var(--urgent)', order: 0 },
+  normal: { name: 'Второстепенно', color: 'var(--normal)', order: 1 },
+  later:  { name: 'Можно потом',   color: 'var(--later)',  order: 2 },
+};
+const KEY = 'todo-planner-v1';
+const DAY_NAMES = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+
+// ---------- Хранилище ----------
+let data = {};
+try { data = JSON.parse(localStorage.getItem(KEY)) || {}; } catch { data = {}; }
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch {} };
+
+// ---------- Даты ----------
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const addDays = (s, n) => { const d = new Date(s + 'T12:00'); d.setDate(d.getDate() + n); return iso(d); };
+const todayIso = () => iso(new Date());
+let current = todayIso();
+
+const tasksOf = day => data[day] || [];
+const progress = list => {
+  const total = list.length, done = list.filter(t => t.done).length;
+  return { total, done, pct: total ? done / total : 0 };
+};
+
+// ---------- Кольца ----------
+function ring(r, width, color, value) {
+  const c = 2 * Math.PI * r;
+  return `<circle cx="100" cy="100" r="${r}" stroke="var(--track)" stroke-width="${width}"/>
+          <circle cx="100" cy="100" r="${r}" stroke="${color}" stroke-width="${width}"
+            stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - value)}"/>`;
+}
+function miniRing(value) {
+  const r = 15, c = 2 * Math.PI * r;
+  const color = value >= 1 ? 'var(--ok)' : 'var(--later)';
+  return `<svg viewBox="0 0 38 38"><circle cx="19" cy="19" r="${r}" stroke="var(--track)"/>
+    <circle cx="19" cy="19" r="${r}" stroke="${color}" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - value)}"/></svg>`;
+}
+
+// ---------- Отрисовка ----------
+function render() {
+  const list = tasksOf(current);
+  const all = progress(list);
+
+  // Заголовок даты
+  const d = new Date(current + 'T12:00');
+  const label = d.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' });
+  document.getElementById('dateLabel').textContent = current === todayIso() ? 'Сегодня, ' + label.split(', ')[1] : label;
+
+  // Три кольца по приоритетам
+  const keys = Object.keys(PRIO);
+  let svg = '', legend = '';
+  keys.forEach((k, i) => {
+    const p = progress(list.filter(t => t.prio === k));
+    svg += ring(88 - i * 22, 16, PRIO[k].color, p.pct);
+    legend += `<div class="legend-row"><span class="dot" style="background:${PRIO[k].color}"></span>
+      <span class="name">${PRIO[k].name}</span><span class="val">${p.done} / ${p.total}</span></div>`;
+  });
+  document.getElementById('ringsSvg').innerHTML = svg;
+  document.getElementById('legend').innerHTML = legend;
+  document.getElementById('pct').textContent = Math.round(all.pct * 100) + '%';
+  document.getElementById('sub').textContent = all.total ? `${all.done} из ${all.total} выполнено` : 'нет задач';
+
+  // Неделя (7 дней, заканчивая выбранным)
+  let week = '', wDone = 0, wTotal = 0;
+  for (let i = 6; i >= 0; i--) {
+    const day = addDays(current, -i), p = progress(tasksOf(day));
+    wDone += p.done; wTotal += p.total;
+    const dd = new Date(day + 'T12:00');
+    week += `<button class="wd ${day === current ? 'active' : ''}" data-day="${day}" title="${p.done} из ${p.total}">
+      <small>${DAY_NAMES[dd.getDay()]}</small>${miniRing(p.pct)}<span class="num">${dd.getDate()}</span></button>`;
+  }
+  document.getElementById('week').innerHTML = week;
+  document.getElementById('weekPct').textContent = (wTotal ? Math.round(wDone / wTotal * 100) : 0) + '%';
+
+  // Серия дней на 100% (сегодня засчитывается, если уже закрыт)
+  let streak = 0, day = todayIso();
+  if (progress(tasksOf(day)).pct < 1) day = addDays(day, -1);
+  while (true) { const p = progress(tasksOf(day)); if (p.total && p.pct >= 1) { streak++; day = addDays(day, -1); } else break; }
+  document.getElementById('streak').textContent = streak;
+
+  // Список: сначала невыполненные, по приоритету
+  const sorted = [...list].sort((a, b) => a.done - b.done || PRIO[a.prio].order - PRIO[b.prio].order || a.created - b.created);
+  const ul = document.getElementById('list');
+  ul.innerHTML = sorted.length ? '' : '<li class="empty">На этот день задач нет. Добавь первую выше.</li>';
+  sorted.forEach(t => {
+    const li = document.createElement('li');
+    li.className = t.done ? 'done' : '';
+    li.style.setProperty('--c', PRIO[t.prio].color);
+    li.innerHTML = `
+      <button class="check" aria-label="Отметить выполнение"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M5 12l5 5L20 7"/></svg></button>
+      <span class="title"></span><span class="tag">${PRIO[t.prio].name}</span>
+      <button class="del" aria-label="Удалить">×</button>`;
+    li.querySelector('.title').textContent = t.title;
+    li.querySelector('.check').onclick = () => { t.done = !t.done; save(); render(); };
+    li.querySelector('.del').onclick = () => { data[current] = list.filter(x => x !== t); save(); render(); };
+    ul.appendChild(li);
+  });
+  document.getElementById('listTitle').textContent = `Задачи · ${all.total - all.done} осталось`;
+
+  // Перенос невыполненных со вчера
+  const leftovers = tasksOf(addDays(current, -1)).filter(t => !t.done);
+  const carry = document.getElementById('carry');
+  carry.hidden = !leftovers.length;
+  carry.textContent = `Перенести невыполненные со вчера (${leftovers.length})`;
+}
+
+// ---------- События ----------
+document.getElementById('form').addEventListener('submit', e => {
+  e.preventDefault();
+  const input = document.getElementById('taskInput');
+  const title = input.value.trim();
+  if (!title) return;
+  const prio = document.querySelector('input[name=prio]:checked').value;
+  (data[current] ||= []).push({ id: crypto.randomUUID?.() || String(Date.now()), title, prio, done: false, created: Date.now() });
+  input.value = '';
+  save(); render(); input.focus();
+});
+document.getElementById('prev').onclick = () => { current = addDays(current, -1); render(); };
+document.getElementById('next').onclick = () => { current = addDays(current, 1); render(); };
+document.getElementById('today').onclick = () => { current = todayIso(); render(); };
+document.getElementById('week').addEventListener('click', e => {
+  const b = e.target.closest('.wd'); if (b) { current = b.dataset.day; render(); }
+});
+document.getElementById('carry').onclick = () => {
+  const yesterday = addDays(current, -1);
+  const moving = tasksOf(yesterday).filter(t => !t.done);
+  data[yesterday] = tasksOf(yesterday).filter(t => t.done);
+  (data[current] ||= []).push(...moving.map(t => ({ ...t, created: Date.now() })));
+  save(); render();
+};
+
+render();
+</script>
+</body>
+</html>
